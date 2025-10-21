@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Gerencia Industrial (HTML/JS)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; scroll-behavior: smooth; }
+        #settingsPanel { transition: transform 0.3s ease; }
+        .alert-box { transition: transform 0.5s ease; }
+        .tarjeta-wrapper {
+            display: block;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .tarjeta-wrapper:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        #scrollToTopBtn {
+            transition: opacity 0.3s ease, visibility 0.3s ease;
+        }
+        .card-description-area {
+            white-space: pre-wrap;
+            min-height: 1.5rem;
+            padding-top: 0.125rem;
+            padding-bottom: 0.125rem;
+            padding-left: 0;
+            padding-right: 0;
+        }
+        .block-title-input {
+            background: none;
+            border: none;
+            font-weight: bold;
+            font-size: 1.25rem;
+            color: #374151;
+            padding: 0.25rem;
+            border-radius: 0.375rem;
+            width: 100%;
+            max-width: 100%;
+            outline: none;
+        }
+        .block-title-input:focus {
+            background-color: #f3f4f6;
+            box-shadow: 0 0 0 2px #3b82f6;
+        }
+    </style>
+</head>
+<body>
+    <div id="app" class="min-h-screen bg-gray-100 font-sans antialiased relative"></div>
+    <div id="lightbox-container"></div>
+    <div id="alert-container" class="fixed top-4 right-4 z-50">
+        <div id="alert-box" class="alert-box bg-green-600 text-white px-4 py-3 rounded-xl shadow-2xl text-sm font-semibold transform translate-x-full"></div>
+    </div>
+    <div id="settingsPanel" class="fixed top-0 right-0 h-full w-full md:w-96 bg-gray-50/95 backdrop-blur-sm z-40 p-6 shadow-2xl overflow-y-auto transform translate-x-full"></div>
+
+    <script>
+        const BLOCKS_COUNT = 5;
+        const EMOJI_OPTIONS = ['📊','📈','📉','⚙️','🔩','🔧','💡','🧠','⭐','💰','💲','💶','🛡️','🚨','✅','🏭','📦','🚚','📋','📝','🔗','⏰','🗓️','⏱️️','🌎','🌱','♻️'];
+        const DEFAULT_COLOR_ORDER = ['indigo', 'green', 'red', 'blue', 'purple'];
+        const COLOR_CLASSES = {
+            indigo: { bg: 'bg-indigo-500', border: ['border-l-4', 'border-indigo-600'], text: 'text-indigo-700', hoverCard: ['hover:bg-indigo-50', 'hover:border-indigo-600', 'border-indigo-600'], button: ['bg-indigo-600', 'hover:bg-indigo-700'] },
+            green: { bg: 'bg-green-500', border: ['border-l-4', 'border-green-600'], text: 'text-green-700', hoverCard: ['hover:bg-green-50', 'hover:border-green-600', 'border-green-600'], button: ['bg-green-600', 'hover:bg-green-700'] },
+            red: { bg: 'bg-red-500', border: ['border-l-4', 'border-red-600'], text: 'text-red-700', hoverCard: ['hover:bg-red-50', 'hover:border-red-600', 'border-red-600'], button: ['bg-red-600', 'hover:bg-red-700'] },
+            blue: { bg: 'bg-blue-500', border: ['border-l-4', 'border-blue-600'], text: 'text-blue-700', hoverCard: ['hover:bg-blue-50', 'hover:border-blue-600', 'border-blue-600'], button: ['bg-blue-600', 'hover:bg-blue-700'] },
+            purple: { bg: 'bg-purple-500', border: ['border-l-4', 'border-purple-600'], text: 'text-purple-700', hoverCard: ['hover:bg-purple-50', 'hover:border-purple-600', 'border-purple-600'], button: ['bg-purple-600', 'hover:bg-purple-700'] },
+        };
+        const DEFAULT_BLOCK1_TABLE_DATA = [
+            ['Métrica', 'Valor Actual', 'Meta', 'Desviación'],
+            ['Costo Unitario', '1.25 €', '1.20 €', '+4.2%'],
+            ['Eficiencia Línea A', '92%', '95%', '-3%'],
+            ['Horas Improductivas', '150 h', '100 h', '+50 h'],
+        ];
+        const DEFAULT_GENERIC_TABLE = [
+            ['Título Columna 1', 'Título Columna 2', 'Título Columna 3'],
+            ['Dato A1', 'Dato A2', 'Dato A3'],
+            ['Dato B1', 'Dato B2', 'Dato B3'],
+        ];
+
+        let appState = {
+            dashboardTitle: "Presentación - Gerencia Industrial",
+            dashboardSubtitle: "Dashboard Ejecutivo de Rendimiento Operacional",
+            settings: {},
+            contentData: {},
+            cardDescriptions: {},
+            isPanelOpen: false,
+            lightboxSrc: null,
+            showScrollToTop: false,
+        };
+
+        // === FUNCIONES DE LIMPIEZA MEJORADAS ===
+        function sanitizeShortText(value) {
+            if (typeof value !== 'string' || value === null) return '';
+            let clean = value
+                .replace(/\s/g, ' ')
+                .replace(/[\u200B-\u200D\uFEFF\u00AD\u0000-\u001F\u007F-\u009F]/g, '')
+                .replace(/ {2,}/g, ' ')
+                .trim();
+            return clean || '';
+        }
+
+        function sanitizeLongText(value) {
+            if (typeof value !== 'string' || value === null) return '';
+            let clean = value
+                .replace(/[\u200B-\u200D\uFEFF\u00AD\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, '');
+            return clean;
+        }
+
+        function updateState(newState, reRender = true) {
+            Object.assign(appState, newState);
+            if (reRender) renderDashboard();
+        }
+
+        function showAlert(message) {
+            const alertBox = document.getElementById('alert-box');
+            alertBox.textContent = message;
+            alertBox.classList.remove('translate-x-full');
+            const isError = message.includes('⚠️') || message.includes('Error');
+            alertBox.classList.remove('bg-green-600', 'bg-red-600');
+            alertBox.classList.add(isError ? 'bg-red-600' : 'bg-green-600');
+            setTimeout(() => alertBox.classList.add('translate-x-full'), 3000);
+        }
+
+        function scrollToTop() { window.scrollTo({ top: 0, behavior: 'smooth' }); }
+        function scrollToBlock(id) {
+            const blockElement = document.getElementById(`block-ref-${id}`);
+            if (blockElement && (appState.settings[id]?.isVisible ?? true)) {
+                blockElement.scrollIntoView({ behavior: 'smooth' });
+            } else {
+                showAlert(`⚠️ El Bloque ${id} está oculto. Edita su visibilidad en el panel de ajustes.`);
+            }
+        }
+
+        function openLightbox(src) {
+            updateState({ lightboxSrc: src }, false);
+            renderLightbox();
+        }
+        function closeLightbox() {
+            updateState({ lightboxSrc: null }, false);
+            document.getElementById('lightbox-container').innerHTML = '';
+        }
+
+        // === CARGA Y GUARDADO ===
+        function loadInitialData() {
+            appState.dashboardTitle = sanitizeShortText(localStorage.getItem('dashboardTitle') || "Presentación - Gerencia Industrial");
+            appState.dashboardSubtitle = sanitizeShortText(localStorage.getItem('dashboardSubtitle') || "Dashboard Ejecutivo de Rendimiento Operacional");
+
+            let initialSettings = {};
+            try {
+                initialSettings = JSON.parse(localStorage.getItem('dashboardSettings')) || {};
+            } catch (e) {}
+
+            let tempSettings = {};
+            let initialDescriptions = {};
+            let initialContentData = {};
+
+            for (let i = 1; i <= BLOCKS_COUNT; i++) {
+                const isBlock1 = i === 1;
+                const storedSettings = initialSettings[i] || {};
+                tempSettings[i] = {
+                    icon: sanitizeShortText(storedSettings.icon || EMOJI_OPTIONS[(i - 1) % EMOJI_OPTIONS.length]),
+                    color: sanitizeShortText(storedSettings.color || DEFAULT_COLOR_ORDER[i - 1]),
+                    cardTitle: sanitizeShortText(storedSettings.cardTitle || `Mi Título Personalizado ${i}`),
+                    chartSectionTitle: sanitizeShortText(storedSettings.chartSectionTitle || 'Visualización / Gráfico Clave'),
+                    contentSectionTitle: sanitizeShortText(storedSettings.contentSectionTitle || (isBlock1 ? 'Análisis y KPI Editables' : 'Contenido Detallado')),
+                    contentType: (storedSettings.contentType || (isBlock1 ? 'table' : 'text')),
+                    isVisible: storedSettings.isVisible ?? true,
+                    showChartSection: storedSettings.showChartSection ?? true,
+                };
+
+                const storedDescription = localStorage.getItem(`cardDescription-${i}`);
+                const defaultDescription = `Subtítulo editable del Bloque ${i}`;
+                initialDescriptions[i] = sanitizeShortText(storedDescription || defaultDescription) || defaultDescription;
+
+                const storedText = localStorage.getItem(`contentDataText-${i}`);
+                const defaultText = `Este es el espacio para desarrollar el contenido clave del Bloque ${i}.\nAquí puedes describir los principales hallazgos...`;
+                const blockText = storedText !== null ? sanitizeLongText(storedText) : defaultText;
+
+                const storedTable = localStorage.getItem(`contentDataTable-${i}`);
+                const defaultTable = i === 1 ? DEFAULT_BLOCK1_TABLE_DATA : DEFAULT_GENERIC_TABLE;
+                let blockTable = defaultTable;
+                if (storedTable) {
+                    try {
+                        const parsed = JSON.parse(storedTable);
+                        blockTable = (Array.isArray(parsed) && parsed.every(Array.isArray)) ? parsed : defaultTable;
+                    } catch (e) {
+                        blockTable = defaultTable;
+                    }
+                }
+
+                initialContentData[i] = { text: blockText, table: blockTable };
+            }
+
+            appState.settings = tempSettings;
+            appState.cardDescriptions = initialDescriptions;
+            appState.contentData = initialContentData;
+        }
+
+        function saveToStorage(key, value, isJSON = false) {
+            if (value === null || value === '') {
+                localStorage.removeItem(key);
+            } else {
+                localStorage.setItem(key, isJSON ? JSON.stringify(value) : value);
+            }
+        }
+
+        // === RENDERIZADO ===
+        function getCardHTML(id) {
+            const settings = appState.settings[id];
+            const description = appState.cardDescriptions[id] || `Subtítulo editable del Bloque ${id}`;
+            if (!settings.isVisible) {
+                return `<div class="flex-1 min-w-0 p-4 bg-gray-200/50 rounded-xl border border-dashed border-gray-400 text-gray-500 flex items-center justify-center cursor-default opacity-80" style="min-height: 120px;">
+                    <span class="text-sm font-medium">Bloque ${id} Oculto (Editar en ⚙️)</span>
+                </div>`;
+            }
+            const colorClass = COLOR_CLASSES[settings.color] || COLOR_CLASSES.indigo;
+            return `
+                <div id="card-wrapper-${id}" class="tarjeta-wrapper flex-1 min-w-0 p-4 bg-white rounded-xl shadow-lg border border-gray-200 transition duration-300 ${colorClass.hoverCard[0]} ${colorClass.hoverCard[2]}"
+                    style="min-height: 120px;"
+                >
+                    <div class="flex items-center space-x-3">
+                        <div class="text-4xl ${colorClass.text}">${settings.icon}</div>
+                        <div class="flex flex-col w-full">
+                            <h3 class="text-lg font-semibold ${colorClass.text} cursor-pointer hover:underline"
+                                onclick="scrollToBlock(${id})"
+                                title="Haga clic para ir al Bloque ${id}"
+                            >
+                                ${settings.cardTitle}
+                            </h3>
+                            <div class="text-sm text-gray-500 card-description-area">${description}</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function updateCard(id) {
+            const wrapper = document.getElementById(`card-wrapper-${id}`);
+            if (wrapper) wrapper.outerHTML = getCardHTML(id);
+        }
+
+        function getBlockContentHTML(id) {
+            const settings = appState.settings[id];
+            const colorClass = COLOR_CLASSES[settings.color] || COLOR_CLASSES.indigo;
+            const storedImage = localStorage.getItem(`blockImage-${id}`);
+            const isTableBlock = settings.contentType === 'table';
+            const chartSectionWidthClass = settings.showChartSection ? "md:w-1/2" : "md:w-full";
+            const contentSectionWidthClass = settings.showChartSection ? "md:w-1/2" : "md:w-full";
+
+            let imageHTML = '';
+            if (settings.showChartSection) {
+                const imagePlaceholder = storedImage
+                    ? `<img src="${storedImage}" alt="Gráfico del Bloque ${id}" class="w-full h-full object-contain pointer-events-none" onerror="this.onerror=null; this.src='https://placehold.co/300x256/fecaca/9f1239?text=Error+en+Imagen'; showAlert('⚠️ Error cargando la imagen guardada.');" />`
+                    : `<span class="text-gray-500">Espacio para Gráfico o Imagen (Sube un archivo)</span>`;
+                const deleteButton = storedImage
+                    ? `<button onclick="deleteImage(${id}); event.stopPropagation();" class="bg-red-500 text-white text-xs font-semibold px-3 py-1 rounded-lg hover:bg-red-600 transition shadow-sm">Borrar</button>`
+                    : '';
+                imageHTML = `
+                    <div class="${chartSectionWidthClass}">
+                        <input type="text"
+                            value="${settings.chartSectionTitle}"
+                            aria-label="Título de la sección de gráfico del Bloque ${id}"
+                            class="block-title-input w-full mb-4 p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            onblur="saveSectionTitle(${id}, 'chartSectionTitle', this.value)"
+                        />
+                        <div class="w-full h-64 bg-gray-100 rounded-lg flex items-center justify-center border-2 border-dashed border-gray-300 overflow-hidden relative transition ${storedImage ? 'cursor-zoom-in hover:shadow-lg hover:border-blue-400' : ''}"
+                             onclick="${storedImage ? `openLightbox('${storedImage}')` : ''}">
+                            ${imagePlaceholder}
+                            <div class="absolute top-2 right-2 flex space-x-2">
+                                <label class="cursor-pointer ${colorClass.bg} text-white text-xs font-semibold px-3 py-1 rounded-lg hover:opacity-90 transition shadow-sm">
+                                    Subir Imagen
+                                    <input type="file" class="hidden" accept=".png, .jpg, .jpeg" onchange="saveImage(${id}, event)" onclick="event.stopPropagation();" />
+                                </label>
+                                ${deleteButton}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            const contentBlock = isTableBlock ? renderTableHTML(id) : renderTextareaHTML(id);
+            return `
+                <section id="block-ref-${id}" class="p-6 md:p-10 bg-white rounded-xl shadow-2xl mt-12 transition duration-500 ${colorClass.border.join(' ')}">
+                    <h2 class="text-3xl font-extrabold mb-6 ${colorClass.text}">${settings.cardTitle}</h2>
+                    <div class="flex flex-col md:flex-row gap-8 mb-8">
+                        ${imageHTML}
+                        <div class="${contentSectionWidthClass}">
+                            <div class="flex justify-between items-center mb-4">
+                                <input type="text"
+                                    value="${settings.contentSectionTitle}"
+                                    aria-label="Título de la sección de contenido del Bloque ${id}"
+                                    class="block-title-input w-full mb-4 p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                    onblur="saveSectionTitle(${id}, 'contentSectionTitle', this.value)"
+                                />
+                                <div class="flex space-x-2">
+                                    <button onclick="switchContentType(${id}, 'text')" class="text-sm px-3 py-1 rounded-full font-medium transition shadow-sm ${!isTableBlock ? `${colorClass.bg} text-white` : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}" title="Cambiar a editor de texto">📝 Texto</button>
+                                    <button onclick="switchContentType(${id}, 'table')" class="text-sm px-3 py-1 rounded-full font-medium transition shadow-sm ${isTableBlock ? `${colorClass.bg} text-white` : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}" title="Cambiar a tabla editable">📋 Tabla</button>
+                                </div>
+                            </div>
+                            ${contentBlock}
+                        </div>
+                    </div>
+                </section>
+            `;
+        }
+
+        function updateBlock(id) {
+            const blockEl = document.getElementById(`block-ref-${id}`);
+            if (blockEl) {
+                const newHTML = getBlockContentHTML(id);
+                const temp = document.createElement('div');
+                temp.innerHTML = newHTML;
+                blockEl.parentNode.replaceChild(temp.firstElementChild, blockEl);
+            }
+        }
+
+        function renderTableHTML(id) {
+            const tableToRender = appState.contentData[id].table || DEFAULT_GENERIC_TABLE;
+            const colorClass = COLOR_CLASSES[appState.settings[id].color] || COLOR_CLASSES.indigo;
+            const btnColorClass = colorClass.button.join(' ');
+
+            let tableHTML = `<table id="table-block-${id}" class="min-w-full divide-y divide-gray-200"><tbody class="bg-white divide-y divide-gray-200">`;
+            tableToRender.forEach((row, rowIndex) => {
+                tableHTML += `<tr class="${rowIndex === 0 ? 'bg-gray-50 font-medium text-gray-700' : ''}">`;
+                row.forEach((cell, cellIndex) => {
+                    const cleanCell = sanitizeShortText(cell);
+                    tableHTML += `
+                        <td>
+                            <input type="text"
+                                value="${cleanCell}"
+                                aria-label="Celda fila ${rowIndex + 1}, columna ${cellIndex + 1} del Bloque ${id}"
+                                class="w-full px-2 py-1 text-sm border-none focus:outline-none focus:ring-1 focus:ring-blue-400 rounded"
+                                onblur="handleTableCellBlur('${id}', ${rowIndex}, ${cellIndex}, this.value)"
+                            />
+                        </td>
+                    `;
+                });
+                tableHTML += `</tr>`;
+            });
+            tableHTML += `</tbody></table>`;
+
+            return `
+                <div class="bg-white p-4 rounded-lg shadow border relative">
+                    <div class="flex justify-end space-x-2 mb-4 absolute top-4 right-4 z-10">
+                        <button onclick="addRow(${id})" class="text-xs text-white p-2 rounded-full font-medium transition shadow-sm ${btnColorClass}" title="Agregar Fila">+ Fila</button>
+                        <button onclick="removeRow(${id})" class="text-xs text-white p-2 rounded-full font-medium transition shadow-sm bg-red-500 hover:bg-red-600 ${tableToRender.length <= 1 ? 'opacity-50 cursor-not-allowed' : ''}" ${tableToRender.length <= 1 ? 'disabled' : ''}>- Fila</button>
+                        <button onclick="addColumn(${id})" class="text-xs text-white p-2 rounded-full font-medium transition shadow-sm ${btnColorClass}" title="Agregar Columna">+ Col.</button>
+                        <button onclick="removeColumn(${id})" class="text-xs text-white p-2 rounded-full font-medium transition shadow-sm bg-red-500 hover:bg-red-600 ${tableToRender[0].length <= 1 ? 'opacity-50 cursor-not-allowed' : ''}" ${tableToRender[0].length <= 1 ? 'disabled' : ''}>- Col.</button>
+                    </div>
+                    <div class="overflow-x-auto pt-16">${tableHTML}</div>
+                </div>
+            `;
+        }
+
+        function renderTextareaHTML(id) {
+            const textContent = appState.contentData[id].text || `Este es el espacio de texto del Bloque ${id}.`;
+            return `
+                <div>
+                    <textarea
+                        onblur="handleTextBlur('${id}', this.value)"
+                        aria-label="Contenido de texto del Bloque ${id}"
+                        class="text-gray-700 leading-relaxed bg-gray-50 p-4 rounded-lg border hover:border-gray-300 transition cursor-text w-full h-96 resize-y focus:outline-none focus:ring-4 focus:ring-blue-200 focus:border-blue-500"
+                        placeholder="Escribe aquí tu análisis detallado..."
+                    >${textContent}</textarea>
+                    <p class="text-xs text-gray-500 mt-2 font-medium">✨ Auto-guardado al desenfocar.</p>
+                </div>
+            `;
+        }
+
+        function renderSettingsPanel() {
+            let panelHTML = `
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-2xl font-bold text-gray-800">⚙️ Personalizar Estilos y Títulos</h3>
+                    <button onclick="togglePanel(false)" class="text-gray-500 hover:text-gray-900 text-3xl transition">&times;</button>
+                </div>`;
+            for (let i = 1; i <= BLOCKS_COUNT; i++) {
+                const id = i;
+                const currentSetting = appState.settings[id];
+                const currentSubtitle = appState.cardDescriptions[id] || `Subtítulo editable del Bloque ${i}`;
+                const colorClass = COLOR_CLASSES[currentSetting.color] || COLOR_CLASSES.indigo;
+
+                panelHTML += `<div key="${id}" class="mb-8 p-4 bg-white rounded-xl shadow-md border ${currentSetting.isVisible ? 'border-gray-200' : 'border-red-400 opacity-70'}">
+                    <h4 class="text-lg font-semibold mb-3 text-gray-700">Bloque ${id} (${currentSetting.cardTitle})</h4>
+                    <div class="flex items-center justify-between mb-4 p-2 border-b border-gray-100">
+                        <label class="text-sm font-medium text-gray-700">Visibilidad del Bloque</label>
+                        <input type="checkbox" ${currentSetting.isVisible ? 'checked' : ''} onchange="handlePanelSettingChange(${id}, 'isVisible', this.checked)" class="h-5 w-5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500" />
+                    </div>
+                    <div class="flex items-center justify-between mb-4 p-2 border-b border-gray-100">
+                        <label class="text-sm font-medium text-gray-700">Mostrar Sección Gráfico</label>
+                        <input type="checkbox" ${currentSetting.showChartSection ? 'checked' : ''} onchange="handlePanelSettingChange(${id}, 'showChartSection', this.checked)" class="h-5 w-5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500" />
+                    </div>
+                    <label class="block text-sm font-medium text-gray-500 mb-2">Título Principal de la Tarjeta</label>
+                    <input type="text" value="${currentSetting.cardTitle}" onblur="handlePanelTitleChange(${id}, 'cardTitle', this.value)" class="w-full mb-4 p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+                    <label class="block text-sm font-medium text-gray-500 mb-2">Subtítulo de la Tarjeta</label>
+                    <textarea onblur="handleCardSubtitleChange(${id}, this.value)" rows="2" class="w-full mb-4 p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">${currentSubtitle}</textarea>
+                    <label class="block text-sm font-medium text-gray-500 mb-2">Tipo de Contenido</label>
+                    <select onchange="handlePanelSettingChange(${id}, 'contentType', this.value, true)" class="w-full mb-4 p-2 border border-gray-300 rounded-lg">
+                        <option value="text" ${currentSetting.contentType === 'text' ? 'selected' : ''}>📝 Texto Editable</option>
+                        <option value="table" ${currentSetting.contentType === 'table' ? 'selected' : ''}>📋 Tabla Editable</option>
+                    </select>
+                    <label class="block text-sm font-medium text-gray-500 mb-2">Color</label>
+                    <div class="flex flex-wrap gap-2 mb-4">
+                        ${Object.keys(COLOR_CLASSES).map(color => `
+                            <button onclick="handlePanelSettingChange(${id}, 'color', '${color}')" class="w-8 h-8 rounded-lg transition duration-150 ${COLOR_CLASSES[color].bg} ${currentSetting.color === color ? 'ring-4 ring-offset-2 ring-gray-400' : ''}" title="${color}"></button>
+                        `).join('')}
+                    </div>
+                    <label class="block text-sm font-medium text-gray-500 mb-2">Ícono (${currentSetting.icon})</label>
+                    <select onchange="handlePanelSettingChange(${id}, 'icon', this.value)" class="w-full p-2 border border-gray-300 rounded-lg">
+                        ${EMOJI_OPTIONS.map(icon => `<option value="${icon}" ${currentSetting.icon === icon ? 'selected' : ''}>${icon} ${icon}</option>`).join('')}
+                    </select>
+                </div>`;
+            }
+            document.getElementById('settingsPanel').innerHTML = panelHTML;
+        }
+
+        function renderLightbox() {
+            const container = document.getElementById('lightbox-container');
+            if (appState.lightboxSrc) {
+                container.innerHTML = `
+                    <div class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-90" onclick="closeLightbox()">
+                        <div class="relative p-4 max-w-full max-h-full" onclick="event.stopPropagation()">
+                            <img src="${appState.lightboxSrc}" alt="Visualización a pantalla completa" class="max-w-full max-h-screen object-contain rounded-lg shadow-2xl" />
+                            <button onclick="closeLightbox()" class="absolute top-4 right-4 text-white text-4xl font-light hover:text-red-400">&times;</button>
+                        </div>
+                    </div>
+                `;
+            } else {
+                container.innerHTML = '';
+            }
+        }
+
+        function renderDashboard() {
+            const app = document.getElementById('app');
+            const trimmedTitle = appState.dashboardTitle;
+            const trimmedSubtitle = appState.dashboardSubtitle;
+            let content = `
+                <div class="container mx-auto p-4 md:p-8 pt-12">
+                    <input type="text"
+                        value="${trimmedTitle}"
+                        aria-label="Título principal del dashboard"
+                        class="text-4xl md:text-5xl font-extrabold text-gray-800 mb-2 text-center w-full max-w-3xl mx-auto block-title-input p-2 rounded-lg hover:bg-gray-50 transition"
+                        onblur="handleTitleChange(this.value)"
+                    />
+                    <input type="text"
+                        value="${trimmedSubtitle}"
+                        aria-label="Subtítulo del dashboard"
+                        class="text-xl text-gray-500 mb-12 text-center w-full max-w-3xl mx-auto block-title-input p-2 rounded-lg hover:bg-gray-50 transition"
+                        onblur="handleSubtitleChange(this.value)"
+                    />
+                    <div class="flex flex-col md:flex-row gap-4 md:gap-6 justify-between mb-16">
+                        ${[...Array(BLOCKS_COUNT)].map((_, i) => getCardHTML(i + 1)).join('')}
+                    </div>
+                    <div>
+                        ${[...Array(BLOCKS_COUNT)].map((_, i) => (appState.settings[i+1]?.isVisible ? getBlockContentHTML(i + 1) : '')).join('')}
+                    </div>
+                    <div class="h-40"></div>
+                </div>
+                <div class="fixed bottom-6 right-6 flex flex-col space-y-3 z-30">
+                    <button id="scrollToTopBtn" onclick="scrollToTop()" class="w-12 h-12 bg-purple-500 text-white text-xl rounded-xl shadow-lg hover:bg-purple-600 transition duration-200 flex items-center justify-center relative group opacity-0 invisible" title="Volver Arriba">🔝</button>
+                    <label class="w-12 h-12 bg-green-500 text-white text-xl rounded-xl shadow-lg hover:bg-green-600 transition duration-200 flex items-center justify-center relative group cursor-pointer" title="Importar Datos (JSON)">⬆️
+                        <input type="file" id="importFileInput" class="hidden" accept="application/json" onchange="handleImportData(event)" />
+                    </label>
+                    <button onclick="handleExportData()" class="w-12 h-12 bg-blue-500 text-white text-xl rounded-xl shadow-lg hover:bg-blue-600 transition duration-200 flex items-center justify-center relative group" title="Exportar Datos (JSON)">⬇️</button>
+                    <button onclick="togglePanel(true)" class="w-12 h-12 bg-gray-800 text-white text-xl rounded-xl shadow-lg hover:bg-gray-700 transition duration-200 flex items-center justify-center relative group" title="Personalizar Estilos">⚙️</button>
+                </div>
+            `;
+            app.innerHTML = content;
+            renderSettingsPanel();
+            const panel = document.getElementById('settingsPanel');
+            if (appState.isPanelOpen) {
+                panel.classList.remove('translate-x-full');
+            } else {
+                panel.classList.add('translate-x-full');
+            }
+            window.dispatchEvent(new Event('scroll'));
+        }
+
+        // === MANEJO DE EVENTOS ===
+        function handleTitleChange(value) {
+            const clean = sanitizeShortText(value);
+            appState.dashboardTitle = clean;
+            saveToStorage('dashboardTitle', clean);
+            showAlert("¡Título principal guardado!");
+        }
+
+        function handleSubtitleChange(value) {
+            const clean = sanitizeShortText(value);
+            appState.dashboardSubtitle = clean;
+            saveToStorage('dashboardSubtitle', clean);
+            showAlert("¡Subtítulo guardado!");
+        }
+
+        function handleCardSubtitleChange(id, value) {
+            const clean = sanitizeShortText(value);
+            const fallback = `Subtítulo editable del Bloque ${id}`;
+            appState.cardDescriptions[id] = clean || fallback;
+            saveToStorage(`cardDescription-${id}`, appState.cardDescriptions[id]);
+            updateCard(id);
+            renderSettingsPanel();
+            showAlert(`✏️ Subtítulo de Tarjeta ${id} guardado.`);
+        }
+
+        function saveSectionTitle(id, key, value) {
+            const clean = sanitizeShortText(value);
+            appState.settings[id][key] = clean;
+            saveToStorage('dashboardSettings', appState.settings, true);
+            updateBlock(id);
+            const type = key.includes('chart') ? 'Gráfico' : 'Contenido';
+            showAlert(`¡Título de sección de ${type} actualizado!`);
+        }
+
+        function handlePanelTitleChange(id, key, value) {
+            const clean = sanitizeShortText(value);
+            appState.settings[id][key] = clean;
+            saveToStorage('dashboardSettings', appState.settings, true);
+            updateCard(id);
+            updateBlock(id);
+            renderSettingsPanel();
+            showAlert(`¡${key === 'cardTitle' ? 'Título de tarjeta' : 'Título'} actualizado!`);
+        }
+
+        function handlePanelSettingChange(id, key, value, reRenderBlocks = false) {
+            appState.settings[id][key] = value;
+            saveToStorage('dashboardSettings', appState.settings, true);
+            updateCard(id);
+            if (reRenderBlocks) updateBlock(id);
+            renderSettingsPanel();
+        }
+
+        function togglePanel(open) {
+            appState.isPanelOpen = open;
+            const panel = document.getElementById('settingsPanel');
+            if (open) {
+                renderSettingsPanel();
+                panel.classList.remove('translate-x-full');
+            } else {
+                panel.classList.add('translate-x-full');
+            }
+        }
+
+        function handleTextBlur(id, value) {
+            const cleanValue = sanitizeLongText(value);
+            appState.contentData[id].text = cleanValue;
+            saveToStorage(`contentDataText-${id}`, cleanValue);
+            showAlert(`💾 Contenido de texto del Bloque ${id} guardado.`);
+        }
+
+        function handleTableCellBlur(blockId, rowIndex, colIndex, value) {
+            const cleanValue = sanitizeShortText(value);
+            if (!appState.contentData[blockId]?.table?.[rowIndex]) return;
+            appState.contentData[blockId].table[rowIndex][colIndex] = cleanValue;
+            saveToStorage(`contentDataTable-${blockId}`, appState.contentData[blockId].table, true);
+            showAlert(`✅ Celda actualizada en Bloque ${blockId}`);
+        }
+
+        function switchContentType(id, type) {
+            appState.settings[id].contentType = type;
+            saveToStorage('dashboardSettings', appState.settings, true);
+            updateBlock(id);
+            scrollToBlock(id);
+        }
+
+        function addRow(id) {
+            const table = appState.contentData[id].table;
+            if (table.length === 0) {
+                appState.contentData[id].table = [['']];
+            } else {
+                const newRow = Array(table[0].length).fill('');
+                table.push(newRow);
+            }
+            saveToStorage(`contentDataTable-${id}`, appState.contentData[id].table, true);
+            updateBlock(id);
+            showAlert(`➕ Fila agregada al Bloque ${id}.`);
+        }
+
+        function removeRow(id) {
+            const table = appState.contentData[id].table;
+            if (table.length > 1) {
+                table.pop();
+                saveToStorage(`contentDataTable-${id}`, appState.contentData[id].table, true);
+                updateBlock(id);
+                showAlert(`➖ Última fila eliminada del Bloque ${id}.`);
+            } else {
+                showAlert("⚠️ La tabla debe tener al menos una fila.");
+            }
+        }
+
+        function addColumn(id) {
+            const table = appState.contentData[id].table;
+            if (table.length === 0) {
+                appState.contentData[id].table = [['Nueva Columna']];
+            } else {
+                table.forEach((row, i) => {
+                    row.push(i === 0 ? `Nueva Col ${row.length + 1}` : '');
+                });
+            }
+            saveToStorage(`contentDataTable-${id}`, appState.contentData[id].table, true);
+            updateBlock(id);
+            showAlert(`➕ Columna agregada al Bloque ${id}.`);
+        }
+
+        function removeColumn(id) {
+            const table = appState.contentData[id].table;
+            if (table.length > 0 && table[0].length > 1) {
+                table.forEach(row => row.pop());
+                saveToStorage(`contentDataTable-${id}`, appState.contentData[id].table, true);
+                updateBlock(id);
+                showAlert(`➖ Última columna eliminada del Bloque ${id}.`);
+            } else {
+                showAlert("⚠️ La tabla debe tener al menos una columna.");
+            }
+        }
+
+        function saveImage(id, event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                saveToStorage(`blockImage-${id}`, e.target.result);
+                showAlert(`¡Gráfico del Bloque ${id} guardado!`);
+                updateBlock(id);
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function deleteImage(id) {
+            localStorage.removeItem(`blockImage-${id}`);
+            showAlert(`🗑️ Imagen del Bloque ${id} eliminada.`);
+            updateBlock(id);
+        }
+
+        // === IMPORT/EXPORT CORREGIDO ===
+        function handleExportData() {
+            const data = {
+                dashboardTitle: localStorage.getItem('dashboardTitle'),
+                dashboardSubtitle: localStorage.getItem('dashboardSubtitle'),
+                settings: localStorage.getItem('dashboardSettings'),
+            };
+            for (let i = 1; i <= BLOCKS_COUNT; i++) {
+                data[`cardDescription-${i}`] = sanitizeShortText(localStorage.getItem(`cardDescription-${i}`) || '');
+                data[`blockImage-${i}`] = localStorage.getItem(`blockImage-${i}`);
+                data[`contentDataText-${i}`] = localStorage.getItem(`contentDataText-${i}`);
+                data[`contentDataTable-${i}`] = localStorage.getItem(`contentDataTable-${i}`);
+            }
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `dashboard_backup_${new Date().toISOString().slice(0, 10)}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+            showAlert("¡Datos exportados con éxito!");
+        }
+
+        function handleImportData(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const imported = JSON.parse(e.target.result);
+
+                    // --- Restaurar títulos globales ---
+                    if (imported.dashboardTitle !== undefined) {
+                        localStorage.setItem('dashboardTitle', sanitizeShortText(imported.dashboardTitle));
+                    }
+                    if (imported.dashboardSubtitle !== undefined) {
+                        localStorage.setItem('dashboardSubtitle', sanitizeShortText(imported.dashboardSubtitle));
+                    }
+
+                    // --- Restaurar settings de bloques ---
+                    let newSettings = {};
+                    try {
+                        const rawSettings = typeof imported.settings === 'string'
+                            ? JSON.parse(imported.settings)
+                            : imported.settings;
+
+                        if (rawSettings && typeof rawSettings === 'object') {
+                            for (let i = 1; i <= BLOCKS_COUNT; i++) {
+                                const id = String(i);
+                                const stored = rawSettings[id] || rawSettings[i] || {};
+                                newSettings[i] = {
+                                    icon: sanitizeShortText(stored.icon || EMOJI_OPTIONS[(i - 1) % EMOJI_OPTIONS.length]),
+                                    color: sanitizeShortText(stored.color || DEFAULT_COLOR_ORDER[i - 1]),
+                                    cardTitle: sanitizeShortText(stored.cardTitle || `Mi Título Personalizado ${i}`),
+                                    chartSectionTitle: sanitizeShortText(stored.chartSectionTitle || 'Visualización / Gráfico Clave'),
+                                    contentSectionTitle: sanitizeShortText(stored.contentSectionTitle || (i === 1 ? 'Análisis y KPI Editables' : 'Contenido Detallado')),
+                                    contentType: sanitizeShortText(stored.contentType || (i === 1 ? 'table' : 'text')),
+                                    isVisible: stored.isVisible ?? true,
+                                    showChartSection: stored.showChartSection ?? true,
+                                };
+                            }
+                        }
+                    } catch (parseError) {
+                        console.warn("No se pudo parsear settings, usando valores por defecto", parseError);
+                    }
+                    localStorage.setItem('dashboardSettings', JSON.stringify(newSettings));
+
+                    // --- Restaurar contenido de bloques ---
+                    for (let i = 1; i <= BLOCKS_COUNT; i++) {
+                        const keys = [`blockImage-${i}`, `contentDataText-${i}`, `contentDataTable-${i}`, `cardDescription-${i}`];
+                        for (const key of keys) {
+                            if (imported[key] !== undefined) {
+                                let value = imported[key];
+                                if (key.includes('Description')) {
+                                    value = sanitizeShortText(value);
+                                } else if (key.includes('contentDataText')) {
+                                    value = sanitizeLongText(value);
+                                } else if (typeof value === 'string') {
+                                    value = sanitizeShortText(value);
+                                }
+                                if (value === null || value === '') {
+                                    localStorage.removeItem(key);
+                                } else {
+                                    localStorage.setItem(key, value);
+                                }
+                            }
+                        }
+                    }
+
+                    loadInitialData();
+                    renderDashboard();
+                    showAlert("¡Datos del dashboard importados con éxito!");
+                } catch (error) {
+                    console.error("Error al importar:", error);
+                    showAlert("⚠️ Error al importar. Asegúrate de que el archivo sea un JSON válido.");
+                }
+                event.target.value = null;
+            };
+            reader.readAsText(file, 'UTF-8');
+        }
+
+        // === INICIALIZACIÓN ===
+        window.onload = function() {
+            loadInitialData();
+            renderDashboard();
+
+            const btn = document.getElementById('scrollToTopBtn');
+            window.addEventListener('scroll', () => {
+                const visible = window.scrollY > 300;
+                btn.classList.toggle('opacity-0', !visible);
+                btn.classList.toggle('invisible', !visible);
+                btn.classList.toggle('opacity-100', visible);
+                btn.classList.toggle('visible', visible);
+            });
+
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && appState.lightboxSrc) closeLightbox();
+            });
+        };
+    </script>
+</body>
+</html>
