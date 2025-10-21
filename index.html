@@ -53,7 +53,6 @@
         <div id="alert-box" class="alert-box bg-green-600 text-white px-4 py-3 rounded-xl shadow-2xl text-sm font-semibold transform translate-x-full"></div>
     </div>
     <div id="settingsPanel" class="fixed top-0 right-0 h-full w-full md:w-96 bg-gray-50/95 backdrop-blur-sm z-40 p-6 shadow-2xl overflow-y-auto transform translate-x-full"></div>
-
     <script>
         const BLOCKS_COUNT = 5;
         const EMOJI_OPTIONS = ['📊','📈','📉','⚙️','🔩','🔧','💡','🧠','⭐','💰','💲','💶','🛡️','🚨','✅','🏭','📦','🚚','📋','📝','🔗','⏰','🗓️','⏱️️','🌎','🌱','♻️'];
@@ -76,7 +75,6 @@
             ['Dato A1', 'Dato A2', 'Dato A3'],
             ['Dato B1', 'Dato B2', 'Dato B3'],
         ];
-
         let appState = {
             dashboardTitle: "Presentación - Gerencia Industrial",
             dashboardSubtitle: "Dashboard Ejecutivo de Rendimiento Operacional",
@@ -98,19 +96,16 @@
                 .trim();
             return clean || '';
         }
-
         function sanitizeLongText(value) {
             if (typeof value !== 'string' || value === null) return '';
             let clean = value
                 .replace(/[\u200B-\u200D\uFEFF\u00AD\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, '');
             return clean;
         }
-
         function updateState(newState, reRender = true) {
             Object.assign(appState, newState);
             if (reRender) renderDashboard();
         }
-
         function showAlert(message) {
             const alertBox = document.getElementById('alert-box');
             alertBox.textContent = message;
@@ -120,7 +115,6 @@
             alertBox.classList.add(isError ? 'bg-red-600' : 'bg-green-600');
             setTimeout(() => alertBox.classList.add('translate-x-full'), 3000);
         }
-
         function scrollToTop() { window.scrollTo({ top: 0, behavior: 'smooth' }); }
         function scrollToBlock(id) {
             const blockElement = document.getElementById(`block-ref-${id}`);
@@ -130,7 +124,6 @@
                 showAlert(`⚠️ El Bloque ${id} está oculto. Edita su visibilidad en el panel de ajustes.`);
             }
         }
-
         function openLightbox(src) {
             updateState({ lightboxSrc: src }, false);
             renderLightbox();
@@ -140,15 +133,41 @@
             document.getElementById('lightbox-container').innerHTML = '';
         }
 
-        // === CARGA Y GUARDADO ===
-        function loadInitialData() {
-            appState.dashboardTitle = sanitizeShortText(localStorage.getItem('dashboardTitle') || "Presentación - Gerencia Industrial");
-            appState.dashboardSubtitle = sanitizeShortText(localStorage.getItem('dashboardSubtitle') || "Dashboard Ejecutivo de Rendimiento Operacional");
+        // === CARGA INICIAL MEJORADA: PRIMERO data.json, LUEGO localStorage ===
+        async function loadInitialData() {
+            let presetData = null;
 
+            // Intentar cargar data.json desde el repositorio
+            try {
+                const response = await fetch('data.json');
+                if (response.ok) {
+                    presetData = await response.json();
+                    console.log("✅ Datos cargados desde data.json");
+                }
+            } catch (err) {
+                console.warn("⚠️ No se pudo cargar data.json:", err);
+            }
+
+            // Títulos globales
+            appState.dashboardTitle = sanitizeShortText(
+                presetData?.dashboardTitle !== undefined ? presetData.dashboardTitle :
+                localStorage.getItem('dashboardTitle') ||
+                "Presentación - Gerencia Industrial"
+            );
+            appState.dashboardSubtitle = sanitizeShortText(
+                presetData?.dashboardSubtitle !== undefined ? presetData.dashboardSubtitle :
+                localStorage.getItem('dashboardSubtitle') ||
+                "Dashboard Ejecutivo de Rendimiento Operacional"
+            );
+
+            // Settings
             let initialSettings = {};
             try {
-                initialSettings = JSON.parse(localStorage.getItem('dashboardSettings')) || {};
-            } catch (e) {}
+                const rawSettings = presetData?.settings !== undefined ? presetData.settings : localStorage.getItem('dashboardSettings');
+                initialSettings = typeof rawSettings === 'string' ? JSON.parse(rawSettings) : rawSettings || {};
+            } catch (e) {
+                console.warn("Error al parsear settings");
+            }
 
             let tempSettings = {};
             let initialDescriptions = {};
@@ -157,6 +176,7 @@
             for (let i = 1; i <= BLOCKS_COUNT; i++) {
                 const isBlock1 = i === 1;
                 const storedSettings = initialSettings[i] || {};
+
                 tempSettings[i] = {
                     icon: sanitizeShortText(storedSettings.icon || EMOJI_OPTIONS[(i - 1) % EMOJI_OPTIONS.length]),
                     color: sanitizeShortText(storedSettings.color || DEFAULT_COLOR_ORDER[i - 1]),
@@ -168,24 +188,39 @@
                     showChartSection: storedSettings.showChartSection ?? true,
                 };
 
-                const storedDescription = localStorage.getItem(`cardDescription-${i}`);
-                const defaultDescription = `Subtítulo editable del Bloque ${i}`;
-                initialDescriptions[i] = sanitizeShortText(storedDescription || defaultDescription) || defaultDescription;
+                const descKey = `cardDescription-${i}`;
+                initialDescriptions[i] = sanitizeShortText(
+                    presetData?.[descKey] !== undefined ? presetData[descKey] :
+                    localStorage.getItem(descKey) || `Subtítulo editable del Bloque ${i}`
+                ) || `Subtítulo editable del Bloque ${i}`;
 
-                const storedText = localStorage.getItem(`contentDataText-${i}`);
-                const defaultText = `Este es el espacio para desarrollar el contenido clave del Bloque ${i}.\nAquí puedes describir los principales hallazgos...`;
-                const blockText = storedText !== null ? sanitizeLongText(storedText) : defaultText;
+                const textKey = `contentDataText-${i}`;
+                const defaultText = `Este es el espacio para desarrollar el contenido clave del Bloque ${i}.
+Aquí puedes describir los principales hallazgos...`;
+                const blockText = presetData?.[textKey] !== undefined ?
+                    sanitizeLongText(presetData[textKey]) :
+                    sanitizeLongText(localStorage.getItem(textKey)) || defaultText;
 
-                const storedTable = localStorage.getItem(`contentDataTable-${i}`);
+                const tableKey = `contentDataTable-${i}`;
                 const defaultTable = i === 1 ? DEFAULT_BLOCK1_TABLE_DATA : DEFAULT_GENERIC_TABLE;
                 let blockTable = defaultTable;
+                const storedTable = presetData?.[tableKey] !== undefined ? presetData[tableKey] : localStorage.getItem(tableKey);
                 if (storedTable) {
                     try {
                         const parsed = JSON.parse(storedTable);
-                        blockTable = (Array.isArray(parsed) && parsed.every(Array.isArray)) ? parsed : defaultTable;
+                        if (Array.isArray(parsed) && parsed.every(Array.isArray)) {
+                            blockTable = parsed;
+                        }
                     } catch (e) {
-                        blockTable = defaultTable;
+                        console.warn(`Tabla del Bloque ${i} inválida`);
                     }
+                }
+
+                // Imagen: prioridad a data.json, luego localStorage
+                const imgKey = `blockImage-${i}`;
+                const storedImage = presetData?.[imgKey] !== undefined ? presetData[imgKey] : localStorage.getItem(imgKey);
+                if (storedImage) {
+                    localStorage.setItem(imgKey, storedImage); // opcional: para acceso rápido
                 }
 
                 initialContentData[i] = { text: blockText, table: blockTable };
@@ -204,7 +239,7 @@
             }
         }
 
-        // === RENDERIZADO ===
+        // === RENDERIZADO (SIN CAMBIOS) ===
         function getCardHTML(id) {
             const settings = appState.settings[id];
             const description = appState.cardDescriptions[id] || `Subtítulo editable del Bloque ${id}`;
@@ -233,12 +268,10 @@
                 </div>
             `;
         }
-
         function updateCard(id) {
             const wrapper = document.getElementById(`card-wrapper-${id}`);
             if (wrapper) wrapper.outerHTML = getCardHTML(id);
         }
-
         function getBlockContentHTML(id) {
             const settings = appState.settings[id];
             const colorClass = COLOR_CLASSES[settings.color] || COLOR_CLASSES.indigo;
@@ -246,7 +279,6 @@
             const isTableBlock = settings.contentType === 'table';
             const chartSectionWidthClass = settings.showChartSection ? "md:w-1/2" : "md:w-full";
             const contentSectionWidthClass = settings.showChartSection ? "md:w-1/2" : "md:w-full";
-
             let imageHTML = '';
             if (settings.showChartSection) {
                 const imagePlaceholder = storedImage
@@ -277,7 +309,6 @@
                     </div>
                 `;
             }
-
             const contentBlock = isTableBlock ? renderTableHTML(id) : renderTextareaHTML(id);
             return `
                 <section id="block-ref-${id}" class="p-6 md:p-10 bg-white rounded-xl shadow-2xl mt-12 transition duration-500 ${colorClass.border.join(' ')}">
@@ -303,7 +334,6 @@
                 </section>
             `;
         }
-
         function updateBlock(id) {
             const blockEl = document.getElementById(`block-ref-${id}`);
             if (blockEl) {
@@ -313,12 +343,10 @@
                 blockEl.parentNode.replaceChild(temp.firstElementChild, blockEl);
             }
         }
-
         function renderTableHTML(id) {
             const tableToRender = appState.contentData[id].table || DEFAULT_GENERIC_TABLE;
             const colorClass = COLOR_CLASSES[appState.settings[id].color] || COLOR_CLASSES.indigo;
             const btnColorClass = colorClass.button.join(' ');
-
             let tableHTML = `<table id="table-block-${id}" class="min-w-full divide-y divide-gray-200"><tbody class="bg-white divide-y divide-gray-200">`;
             tableToRender.forEach((row, rowIndex) => {
                 tableHTML += `<tr class="${rowIndex === 0 ? 'bg-gray-50 font-medium text-gray-700' : ''}">`;
@@ -338,7 +366,6 @@
                 tableHTML += `</tr>`;
             });
             tableHTML += `</tbody></table>`;
-
             return `
                 <div class="bg-white p-4 rounded-lg shadow border relative">
                     <div class="flex justify-end space-x-2 mb-4 absolute top-4 right-4 z-10">
@@ -351,7 +378,6 @@
                 </div>
             `;
         }
-
         function renderTextareaHTML(id) {
             const textContent = appState.contentData[id].text || `Este es el espacio de texto del Bloque ${id}.`;
             return `
@@ -366,7 +392,6 @@
                 </div>
             `;
         }
-
         function renderSettingsPanel() {
             let panelHTML = `
                 <div class="flex justify-between items-center mb-6">
@@ -378,7 +403,6 @@
                 const currentSetting = appState.settings[id];
                 const currentSubtitle = appState.cardDescriptions[id] || `Subtítulo editable del Bloque ${i}`;
                 const colorClass = COLOR_CLASSES[currentSetting.color] || COLOR_CLASSES.indigo;
-
                 panelHTML += `<div key="${id}" class="mb-8 p-4 bg-white rounded-xl shadow-md border ${currentSetting.isVisible ? 'border-gray-200' : 'border-red-400 opacity-70'}">
                     <h4 class="text-lg font-semibold mb-3 text-gray-700">Bloque ${id} (${currentSetting.cardTitle})</h4>
                     <div class="flex items-center justify-between mb-4 p-2 border-b border-gray-100">
@@ -412,7 +436,6 @@
             }
             document.getElementById('settingsPanel').innerHTML = panelHTML;
         }
-
         function renderLightbox() {
             const container = document.getElementById('lightbox-container');
             if (appState.lightboxSrc) {
@@ -428,7 +451,6 @@
                 container.innerHTML = '';
             }
         }
-
         function renderDashboard() {
             const app = document.getElementById('app');
             const trimmedTitle = appState.dashboardTitle;
@@ -475,21 +497,19 @@
             window.dispatchEvent(new Event('scroll'));
         }
 
-        // === MANEJO DE EVENTOS ===
+        // === MANEJO DE EVENTOS (SIN CAMBIOS) ===
         function handleTitleChange(value) {
             const clean = sanitizeShortText(value);
             appState.dashboardTitle = clean;
             saveToStorage('dashboardTitle', clean);
             showAlert("¡Título principal guardado!");
         }
-
         function handleSubtitleChange(value) {
             const clean = sanitizeShortText(value);
             appState.dashboardSubtitle = clean;
             saveToStorage('dashboardSubtitle', clean);
             showAlert("¡Subtítulo guardado!");
         }
-
         function handleCardSubtitleChange(id, value) {
             const clean = sanitizeShortText(value);
             const fallback = `Subtítulo editable del Bloque ${id}`;
@@ -499,7 +519,6 @@
             renderSettingsPanel();
             showAlert(`✏️ Subtítulo de Tarjeta ${id} guardado.`);
         }
-
         function saveSectionTitle(id, key, value) {
             const clean = sanitizeShortText(value);
             appState.settings[id][key] = clean;
@@ -508,7 +527,6 @@
             const type = key.includes('chart') ? 'Gráfico' : 'Contenido';
             showAlert(`¡Título de sección de ${type} actualizado!`);
         }
-
         function handlePanelTitleChange(id, key, value) {
             const clean = sanitizeShortText(value);
             appState.settings[id][key] = clean;
@@ -518,7 +536,6 @@
             renderSettingsPanel();
             showAlert(`¡${key === 'cardTitle' ? 'Título de tarjeta' : 'Título'} actualizado!`);
         }
-
         function handlePanelSettingChange(id, key, value, reRenderBlocks = false) {
             appState.settings[id][key] = value;
             saveToStorage('dashboardSettings', appState.settings, true);
@@ -526,7 +543,6 @@
             if (reRenderBlocks) updateBlock(id);
             renderSettingsPanel();
         }
-
         function togglePanel(open) {
             appState.isPanelOpen = open;
             const panel = document.getElementById('settingsPanel');
@@ -537,14 +553,12 @@
                 panel.classList.add('translate-x-full');
             }
         }
-
         function handleTextBlur(id, value) {
             const cleanValue = sanitizeLongText(value);
             appState.contentData[id].text = cleanValue;
             saveToStorage(`contentDataText-${id}`, cleanValue);
             showAlert(`💾 Contenido de texto del Bloque ${id} guardado.`);
         }
-
         function handleTableCellBlur(blockId, rowIndex, colIndex, value) {
             const cleanValue = sanitizeShortText(value);
             if (!appState.contentData[blockId]?.table?.[rowIndex]) return;
@@ -552,14 +566,12 @@
             saveToStorage(`contentDataTable-${blockId}`, appState.contentData[blockId].table, true);
             showAlert(`✅ Celda actualizada en Bloque ${blockId}`);
         }
-
         function switchContentType(id, type) {
             appState.settings[id].contentType = type;
             saveToStorage('dashboardSettings', appState.settings, true);
             updateBlock(id);
             scrollToBlock(id);
         }
-
         function addRow(id) {
             const table = appState.contentData[id].table;
             if (table.length === 0) {
@@ -572,7 +584,6 @@
             updateBlock(id);
             showAlert(`➕ Fila agregada al Bloque ${id}.`);
         }
-
         function removeRow(id) {
             const table = appState.contentData[id].table;
             if (table.length > 1) {
@@ -584,7 +595,6 @@
                 showAlert("⚠️ La tabla debe tener al menos una fila.");
             }
         }
-
         function addColumn(id) {
             const table = appState.contentData[id].table;
             if (table.length === 0) {
@@ -598,7 +608,6 @@
             updateBlock(id);
             showAlert(`➕ Columna agregada al Bloque ${id}.`);
         }
-
         function removeColumn(id) {
             const table = appState.contentData[id].table;
             if (table.length > 0 && table[0].length > 1) {
@@ -610,7 +619,6 @@
                 showAlert("⚠️ La tabla debe tener al menos una columna.");
             }
         }
-
         function saveImage(id, event) {
             const file = event.target.files[0];
             if (!file) return;
@@ -622,14 +630,13 @@
             };
             reader.readAsDataURL(file);
         }
-
         function deleteImage(id) {
             localStorage.removeItem(`blockImage-${id}`);
             showAlert(`🗑️ Imagen del Bloque ${id} eliminada.`);
             updateBlock(id);
         }
 
-        // === IMPORT/EXPORT CORREGIDO ===
+        // === IMPORT/EXPORT (SIN CAMBIOS) ===
         function handleExportData() {
             const data = {
                 dashboardTitle: localStorage.getItem('dashboardTitle'),
@@ -651,7 +658,6 @@
             URL.revokeObjectURL(url);
             showAlert("¡Datos exportados con éxito!");
         }
-
         function handleImportData(event) {
             const file = event.target.files[0];
             if (!file) return;
@@ -659,22 +665,17 @@
             reader.onload = (e) => {
                 try {
                     const imported = JSON.parse(e.target.result);
-
-                    // --- Restaurar títulos globales ---
                     if (imported.dashboardTitle !== undefined) {
                         localStorage.setItem('dashboardTitle', sanitizeShortText(imported.dashboardTitle));
                     }
                     if (imported.dashboardSubtitle !== undefined) {
                         localStorage.setItem('dashboardSubtitle', sanitizeShortText(imported.dashboardSubtitle));
                     }
-
-                    // --- Restaurar settings de bloques ---
                     let newSettings = {};
                     try {
                         const rawSettings = typeof imported.settings === 'string'
                             ? JSON.parse(imported.settings)
                             : imported.settings;
-
                         if (rawSettings && typeof rawSettings === 'object') {
                             for (let i = 1; i <= BLOCKS_COUNT; i++) {
                                 const id = String(i);
@@ -692,11 +693,9 @@
                             }
                         }
                     } catch (parseError) {
-                        console.warn("No se pudo parsear settings, usando valores por defecto", parseError);
+                        console.warn("No se pudo parsear settings", parseError);
                     }
                     localStorage.setItem('dashboardSettings', JSON.stringify(newSettings));
-
-                    // --- Restaurar contenido de bloques ---
                     for (let i = 1; i <= BLOCKS_COUNT; i++) {
                         const keys = [`blockImage-${i}`, `contentDataText-${i}`, `contentDataTable-${i}`, `cardDescription-${i}`];
                         for (const key of keys) {
@@ -717,7 +716,6 @@
                             }
                         }
                     }
-
                     loadInitialData();
                     renderDashboard();
                     showAlert("¡Datos del dashboard importados con éxito!");
@@ -730,11 +728,10 @@
             reader.readAsText(file, 'UTF-8');
         }
 
-        // === INICIALIZACIÓN ===
-        window.onload = function() {
-            loadInitialData();
+        // === INICIALIZACIÓN ASÍNCRONA ===
+        window.onload = async function() {
+            await loadInitialData();
             renderDashboard();
-
             const btn = document.getElementById('scrollToTopBtn');
             window.addEventListener('scroll', () => {
                 const visible = window.scrollY > 300;
@@ -743,7 +740,6 @@
                 btn.classList.toggle('opacity-100', visible);
                 btn.classList.toggle('visible', visible);
             });
-
             document.addEventListener('keydown', (e) => {
                 if (e.key === 'Escape' && appState.lightboxSrc) closeLightbox();
             });
